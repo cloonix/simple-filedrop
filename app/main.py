@@ -25,6 +25,8 @@ SESSION_KEY = os.getenv("SESSION_SECRET", secrets.token_hex(32))
 APP_TITLE = os.getenv("APP_TITLE", "Simple Filedrop")
 APP_SUBTITLE = os.getenv("APP_SUBTITLE", "Simple file sharing")
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", str(100 * 1024 * 1024)))  # 100MB default
 
 # Database
 def init_db():
@@ -44,8 +46,14 @@ def cleanup():
 
 # App
 app = FastAPI(title="File Share")
-app.add_middleware(SessionMiddleware, secret_key=SESSION_KEY, same_site="lax")
-app.add_middleware(CORSMiddleware, allow_origins=CORS_ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(SessionMiddleware, 
+    secret_key=SESSION_KEY, 
+    same_site="strict")
+app.add_middleware(CORSMiddleware, 
+    allow_origins=CORS_ALLOWED_ORIGINS, 
+    allow_credentials=True, 
+    allow_methods=["GET", "POST", "DELETE"], 
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 upload_progress = {}
 
@@ -53,15 +61,26 @@ upload_progress = {}
 oauth = OAuth()
 if OIDC_ID: oauth.register('oidc', client_id=OIDC_ID, client_secret=OIDC_SECRET, server_metadata_url=OIDC_URL, client_kwargs={'scope': 'openid profile email'})
 
-def auth(request: Request): return not OIDC_ID or request.session.get('user')
+def auth(request: Request): 
+    if not OIDC_ID and not DEV_MODE:
+        raise HTTPException(401, "Authentication required - OIDC not configured")
+    return DEV_MODE or request.session.get('user')
 
 @app.get("/auth/login")
 async def login(request: Request): return await oauth.oidc.authorize_redirect(request, os.getenv("OIDC_REDIRECT_URI", "http://localhost:8000/auth/callback"))
 
 @app.get("/auth/callback") 
 async def callback(request: Request):
-    try: token = await oauth.oidc.authorize_access_token(request); request.session['user'] = token.get('userinfo'); return RedirectResponse("/")
-    except: raise HTTPException(400, "Auth failed")
+    try: 
+        token = await oauth.oidc.authorize_access_token(request)
+        request.session['user'] = token.get('userinfo')
+        return RedirectResponse("/")
+    except OAuthError as e:
+        logging.warning(f"OAuth error during callback: {type(e).__name__}")
+        raise HTTPException(400, "Authentication failed")
+    except Exception as e:
+        logging.error(f"Unexpected error during auth callback: {type(e).__name__}")
+        raise HTTPException(500, "Authentication service temporarily unavailable")
 
 @app.post("/auth/logout")
 async def logout(request: Request): request.session.clear(); return {"ok": True}
@@ -82,14 +101,22 @@ async def upload(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    max_downloads: Optional[int] = Form(None),
-    expiration_days: int = Form(1),
+    max_downloads: Optional[int] = Form(None, ge=1, le=1000),
+    expiration_days: int = Form(1, ge=1, le=30),
     authenticated: bool = Depends(auth),
 ):
     if not authenticated:
         raise HTTPException(401, "Auth required")
     if not file.filename:
         raise HTTPException(400, "No file")
+    
+    # Check file size
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+    
+    # Additional file size check during upload
+    file_size = 0
 
     clean_filename = os.path.basename(file.filename)
     token = secrets.token_urlsafe(16)
@@ -105,6 +132,12 @@ async def upload(
         
         async with aiofiles.open(path, 'wb') as f:
             while chunk := await file.read(1024 * 1024):  # Read in 1MB chunks
+                file_size += len(chunk)
+                if file_size > MAX_FILE_SIZE:
+                    await f.close()
+                    path.unlink(missing_ok=True)  # Clean up partial file
+                    raise HTTPException(413, f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+                
                 await f.write(chunk)
                 upload_progress[upload_id]["uploaded"] += len(chunk)
                 upload_progress[upload_id]["status"] = "uploading"
@@ -122,11 +155,19 @@ async def upload(
 
         return JSONResponse(content={"token": token, "expires_at": expires.isoformat(), "max_downloads": max_downloads, "upload_id": upload_id})
 
-    except Exception as e:
-        logging.error(f"Upload failed: {e}")
+    except HTTPException:
+        # Re-raise HTTP exceptions (like file size limit)
         upload_progress[upload_id]["status"] = "failed"
         background_tasks.add_task(cleanup_upload_progress, upload_id)
-        raise HTTPException(500, "Upload failed due to an internal error.")
+        raise
+    except Exception as e:
+        logging.error(f"Upload failed: {type(e).__name__} - {str(e)[:100]}")
+        upload_progress[upload_id]["status"] = "failed"
+        background_tasks.add_task(cleanup_upload_progress, upload_id)
+        # Clean up partial file if it exists
+        if 'path' in locals():
+            path.unlink(missing_ok=True)
+        raise HTTPException(500, "Upload failed due to an internal error")
 
 @app.get("/api/upload/progress/{upload_id}")
 async def get_upload_progress(upload_id: str):
