@@ -3,12 +3,12 @@
 Ultra-Minimal File Sharing App
 All features in one file: OIDC auth, upload/download, expiration, limits
 """
-import os, secrets, sqlite3, asyncio, uvicorn, aiofiles
+import os, secrets, sqlite3, asyncio, uvicorn, aiofiles, uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, Depends, BackgroundTasks
-from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, Depends, BackgroundTasks, Header
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -44,6 +44,8 @@ app = FastAPI(title="File Share")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_KEY)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+upload_progress = {}
+
 # Auth
 oauth = OAuth()
 if OIDC_ID: oauth.register('oidc', client_id=OIDC_ID, client_secret=OIDC_SECRET, server_metadata_url=OIDC_URL, client_kwargs={'scope': 'openid profile email'})
@@ -66,23 +68,65 @@ async def me(request: Request): return {"authenticated": auth(request)}
 
 # API
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), max_downloads: Optional[int] = Form(None), expiration_days: int = Form(1), authenticated: bool = Depends(auth)):
-    if not authenticated: raise HTTPException(401, "Auth required")
-    if not file.filename: raise HTTPException(400, "No file")
-    
+async def upload(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    max_downloads: Optional[int] = Form(None),
+    expiration_days: int = Form(1),
+    authenticated: bool = Depends(auth),
+):
+    if not authenticated:
+        raise HTTPException(401, "Auth required")
+    if not file.filename:
+        raise HTTPException(400, "No file")
+
     clean_filename = os.path.basename(file.filename)
-    
     token = secrets.token_urlsafe(16)
     expires = datetime.utcnow() + timedelta(days=expiration_days)
     path = UPLOADS / f"{token}-{clean_filename}"
+    upload_id = str(uuid.uuid4())
+
+    upload_progress[upload_id] = {"total": 0, "uploaded": 0, "status": "starting"}
     
-    async with aiofiles.open(path, 'wb') as f: await f.write(await file.read())
-    
-    conn = sqlite3.connect(DB)
-    conn.execute("INSERT INTO files (filename, token, expires_at, max_downloads) VALUES (?, ?, ?, ?)", (clean_filename, token, expires, max_downloads))
-    conn.commit(); conn.close()
-    
-    return {"token": token, "expires_at": expires.isoformat(), "max_downloads": max_downloads}
+    try:
+        total_size = int(request.headers.get("content-length", 0))
+        upload_progress[upload_id]["total"] = total_size
+        
+        async with aiofiles.open(path, 'wb') as f:
+            while chunk := await file.read(1024 * 1024):  # Read in 1MB chunks
+                await f.write(chunk)
+                upload_progress[upload_id]["uploaded"] += len(chunk)
+                upload_progress[upload_id]["status"] = "uploading"
+
+        conn = sqlite3.connect(DB)
+        conn.execute(
+            "INSERT INTO files (filename, token, expires_at, max_downloads) VALUES (?, ?, ?, ?)",
+            (clean_filename, token, expires, max_downloads),
+        )
+        conn.commit()
+        conn.close()
+        
+        upload_progress[upload_id]["status"] = "completed"
+        background_tasks.add_task(cleanup_upload_progress, upload_id)
+
+        return JSONResponse(content={"token": token, "expires_at": expires.isoformat(), "max_downloads": max_downloads, "upload_id": upload_id})
+
+    except Exception as e:
+        upload_progress[upload_id]["status"] = "failed"
+        background_tasks.add_task(cleanup_upload_progress, upload_id)
+        raise HTTPException(500, f"Upload failed: {e}")
+
+@app.get("/api/upload/progress/{upload_id}")
+async def get_upload_progress(upload_id: str):
+    progress = upload_progress.get(upload_id)
+    if not progress:
+        raise HTTPException(404, "Upload not found")
+    return JSONResponse(content=progress)
+
+async def cleanup_upload_progress(upload_id: str):
+    await asyncio.sleep(300)  # Keep progress for 5 minutes
+    upload_progress.pop(upload_id, None)
 
 @app.get("/api/files")
 async def files(authenticated: bool = Depends(auth)):

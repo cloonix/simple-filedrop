@@ -117,13 +117,31 @@
                             </div>
                         </div>
 
-                        <!-- Upload Button -->
-                        <button @click="upload" :disabled="!selectedFile || uploading" 
-                                class="w-full mt-6 gradient-bg text-white font-semibold py-4 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transform transition-all duration-200 shadow-lg">
-                            <i v-if="uploading" class="fas fa-spinner fa-spin mr-2"></i>
-                            <i v-else class="fas fa-upload mr-2"></i>
-                            {{uploading ? 'Uploading...' : 'Upload File'}}
-                        </button>
+                        <!-- Upload Progress -->
+                        <div v-if="uploading" class="mt-6 space-y-3">
+                            <div class="flex justify-between items-center">
+                                <p class="text-gray-300 text-sm">{{ uploadMessage }}</p>
+                                <p class="text-gray-400 text-sm">{{ uploadProgress }}%</p>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2.5">
+                                <div class="bg-gradient-to-r from-blue-500 to-purple-500 h-2.5 rounded-full transition-all duration-300"
+                                     :style="{ width: uploadProgress + '%' }"></div>
+                            </div>
+                        </div>
+
+                        <!-- Upload & Cancel Buttons -->
+                        <div class="mt-6 flex items-center space-x-4">
+                            <button @click="upload" :disabled="!selectedFile || uploading"
+                                    class="flex-1 gradient-bg text-white font-semibold py-4 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transform transition-all duration-200 shadow-lg">
+                                <i v-if="uploading" class="fas fa-spinner fa-spin mr-2"></i>
+                                <i v-else class="fas fa-upload mr-2"></i>
+                                {{ uploading ? 'Uploading...' : 'Upload File' }}
+                            </button>
+                            <button v-if="uploading" @click="cancelUpload"
+                                    class="px-6 py-4 bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl hover:bg-red-500/30 transition-all">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
 
                         <!-- Upload Success -->
                         <div v-if="uploadResult" class="mt-6 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">

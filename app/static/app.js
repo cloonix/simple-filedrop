@@ -14,6 +14,10 @@ createApp({
         const fileInput = ref(null);
         const isDragging = ref(false);
 
+        const uploadProgress = ref(0);
+        const uploadMessage = ref('');
+        let xhr = null;
+
         // Authentication Functions
         const checkAuth = async () => {
             try {
@@ -62,39 +66,61 @@ createApp({
 
         const upload = async () => {
             if (!selectedFile.value) return;
-            
+
             uploading.value = true;
+            uploadProgress.value = 0;
+            uploadMessage.value = 'Preparing upload...';
+            uploadResult.value = null;
+
             const formData = new FormData();
             formData.append('file', selectedFile.value);
-            
             if (maxDownloads.value) {
                 formData.append('max_downloads', maxDownloads.value);
             }
             formData.append('expiration_days', expirationDays.value);
 
-            try {
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (response.ok) {
-                    uploadResult.value = await response.json();
-                    
-                    // Reset form
+            xhr = new XMLHttpRequest();
+
+            xhr.upload.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    const percentage = Math.round((event.loaded / event.total) * 100);
+                    uploadProgress.value = percentage;
+                    uploadMessage.value = `Uploading... ${percentage}%`;
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                uploading.value = false;
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    uploadProgress.value = 100;
+                    uploadMessage.value = 'Upload complete!';
+                    uploadResult.value = JSON.parse(xhr.responseText);
                     fileInput.value.value = '';
                     selectedFile.value = null;
                     maxDownloads.value = null;
-                    
-                    // Refresh file list
-                    await loadFiles();
+                    loadFiles();
                 } else {
-                    console.error('Upload failed:', response.statusText);
+                    uploadMessage.value = `Error: ${xhr.statusText || 'Upload failed'}`;
                 }
-            } catch (error) {
-                console.error('Upload error:', error);
-            } finally {
+            });
+
+            xhr.addEventListener('error', () => {
                 uploading.value = false;
+                uploadMessage.value = 'An error occurred during the upload.';
+            });
+
+            xhr.addEventListener('abort', () => {
+                uploading.value = false;
+                uploadMessage.value = 'Upload canceled.';
+            });
+
+            xhr.open('POST', '/api/upload', true);
+            xhr.send(formData);
+        };
+
+        const cancelUpload = () => {
+            if (xhr) {
+                xhr.abort();
             }
         };
 
@@ -185,6 +211,8 @@ createApp({
             files,
             fileInput,
             isDragging,
+            uploadProgress,
+            uploadMessage,
             
             // Methods
             login,
@@ -192,6 +220,7 @@ createApp({
             fileSelected,
             handleDrop,
             upload,
+            cancelUpload,
             loadFiles,
             deleteFile,
             copyUrl,
