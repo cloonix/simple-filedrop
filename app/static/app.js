@@ -35,6 +35,7 @@ createApp({
                 const response = await fetch('/api/config');
                 if (response.ok) {
                     appConfig.value = await response.json();
+                    document.title = `${appConfig.value.title} - ${appConfig.value.subtitle}`;
                 }
             } catch (error) {
                 console.error('Failed to load config:', error);
