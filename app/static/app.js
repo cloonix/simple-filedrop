@@ -13,6 +13,7 @@ createApp({
         const files = ref([]);
         const fileInput = ref(null);
         const isDragging = ref(false);
+        const appConfig = ref({ title: 'Simple Filedrop', subtitle: 'Simple file sharing' });
 
         const uploadProgress = ref(0);
         const uploadMessage = ref('');
@@ -26,6 +27,17 @@ createApp({
                 authenticated.value = data.authenticated;
             } catch (error) {
                 console.error('Auth check failed:', error);
+            }
+        };
+
+        const loadConfig = async () => {
+            try {
+                const response = await fetch('/api/config');
+                if (response.ok) {
+                    appConfig.value = await response.json();
+                }
+            } catch (error) {
+                console.error('Failed to load config:', error);
             }
         };
 
@@ -193,6 +205,7 @@ createApp({
 
         // Lifecycle
         onMounted(async () => {
+            await loadConfig();
             await checkAuth();
             if (authenticated.value) {
                 await loadFiles();
@@ -211,6 +224,7 @@ createApp({
             files,
             fileInput,
             isDragging,
+            appConfig,
             uploadProgress,
             uploadMessage,
             

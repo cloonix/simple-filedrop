@@ -22,6 +22,8 @@ OIDC_ID = os.getenv("OIDC_CLIENT_ID")
 OIDC_SECRET = os.getenv("OIDC_CLIENT_SECRET") 
 OIDC_URL = os.getenv("OIDC_DISCOVERY_URL")
 SESSION_KEY = os.getenv("SESSION_SECRET", secrets.token_hex(32))
+APP_TITLE = os.getenv("APP_TITLE", "Simple Filedrop")
+APP_SUBTITLE = os.getenv("APP_SUBTITLE", "Simple file sharing")
 
 # Database
 def init_db():
@@ -64,7 +66,14 @@ async def callback(request: Request):
 async def logout(request: Request): request.session.clear(); return {"ok": True}
 
 @app.get("/auth/me")
-async def me(request: Request): return {"authenticated": auth(request)}
+async def me(request: Request):
+    return {"authenticated": auth(request)}
+
+
+@app.get("/api/config")
+async def config():
+    return {"title": APP_TITLE, "subtitle": APP_SUBTITLE}
+
 
 # API
 @app.post("/api/upload")

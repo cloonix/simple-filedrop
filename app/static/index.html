@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureShare - File Sharing Platform</title>
+    <title>{{ appConfig.title }} - {{ appConfig.subtitle }}</title>
     
     <!-- External Libraries -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -27,8 +27,8 @@
                             <i class="fas fa-share-alt text-white text-lg"></i>
                         </div>
                         <div>
-                            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">SecureShare</h1>
-                            <p class="text-xs text-gray-400">Secure file sharing platform</p>
+                            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">{{ appConfig.title }}</h1>
+                            <p class="text-xs text-gray-400">{{ appConfig.subtitle }}</p>
                         </div>
                     </div>
                     <div v-if="authenticated" class="flex items-center space-x-4">
