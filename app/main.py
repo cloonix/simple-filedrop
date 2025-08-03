@@ -3,7 +3,7 @@
 Ultra-Minimal File Sharing App
 All features in one file: OIDC auth, upload/download, expiration, limits
 """
-import os, secrets, sqlite3, asyncio, uvicorn, aiofiles, uuid
+import os, secrets, sqlite3, asyncio, uvicorn, aiofiles, uuid, logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -24,6 +24,7 @@ OIDC_URL = os.getenv("OIDC_DISCOVERY_URL")
 SESSION_KEY = os.getenv("SESSION_SECRET", secrets.token_hex(32))
 APP_TITLE = os.getenv("APP_TITLE", "Simple Filedrop")
 APP_SUBTITLE = os.getenv("APP_SUBTITLE", "Simple file sharing")
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
 
 # Database
 def init_db():
@@ -43,8 +44,8 @@ def cleanup():
 
 # App
 app = FastAPI(title="File Share")
-app.add_middleware(SessionMiddleware, secret_key=SESSION_KEY)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(SessionMiddleware, secret_key=SESSION_KEY, same_site="lax")
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 upload_progress = {}
 
@@ -122,9 +123,10 @@ async def upload(
         return JSONResponse(content={"token": token, "expires_at": expires.isoformat(), "max_downloads": max_downloads, "upload_id": upload_id})
 
     except Exception as e:
+        logging.error(f"Upload failed: {e}")
         upload_progress[upload_id]["status"] = "failed"
         background_tasks.add_task(cleanup_upload_progress, upload_id)
-        raise HTTPException(500, f"Upload failed: {e}")
+        raise HTTPException(500, "Upload failed due to an internal error.")
 
 @app.get("/api/upload/progress/{upload_id}")
 async def get_upload_progress(upload_id: str):
