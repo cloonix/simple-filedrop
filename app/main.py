@@ -70,14 +70,16 @@ async def upload(file: UploadFile = File(...), max_downloads: Optional[int] = Fo
     if not authenticated: raise HTTPException(401, "Auth required")
     if not file.filename: raise HTTPException(400, "No file")
     
+    clean_filename = os.path.basename(file.filename)
+    
     token = secrets.token_urlsafe(16)
     expires = datetime.utcnow() + timedelta(days=expiration_days)
-    path = UPLOADS / f"{token}-{file.filename}"
+    path = UPLOADS / f"{token}-{clean_filename}"
     
     async with aiofiles.open(path, 'wb') as f: await f.write(await file.read())
     
     conn = sqlite3.connect(DB)
-    conn.execute("INSERT INTO files (filename, token, expires_at, max_downloads) VALUES (?, ?, ?, ?)", (file.filename, token, expires, max_downloads))
+    conn.execute("INSERT INTO files (filename, token, expires_at, max_downloads) VALUES (?, ?, ?, ?)", (clean_filename, token, expires, max_downloads))
     conn.commit(); conn.close()
     
     return {"token": token, "expires_at": expires.isoformat(), "max_downloads": max_downloads}
