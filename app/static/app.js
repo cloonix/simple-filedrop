@@ -190,17 +190,33 @@ createApp({
         };
 
         const formatDate = (dateString) => {
-            const date = new Date(dateString);
+            const expirationDate = new Date(dateString);
             const now = new Date();
-            const diffTime = Math.abs(now - date);
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            const diffTime = expirationDate - now;
             
-            if (diffDays <= 1) {
-                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            } else if (diffDays <= 7) {
-                return `${diffDays} days ago`;
+            // If expired (negative difference)
+            if (diffTime <= 0) {
+                return 'Expired';
+            }
+            
+            const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffHours < 24) {
+                if (diffHours < 1) {
+                    const diffMinutes = Math.floor(diffTime / (1000 * 60));
+                    return diffMinutes <= 1 ? 'Expires in 1 minute' : `Expires in ${diffMinutes} minutes`;
+                }
+                return diffHours === 1 ? 'Expires in 1 hour' : `Expires in ${diffHours} hours`;
+            } else if (diffDays < 7) {
+                return diffDays === 1 ? 'Expires in 1 day' : `Expires in ${diffDays} days`;
             } else {
-                return date.toLocaleDateString();
+                const diffWeeks = Math.floor(diffDays / 7);
+                if (diffWeeks < 4) {
+                    return diffWeeks === 1 ? 'Expires in 1 week' : `Expires in ${diffWeeks} weeks`;
+                } else {
+                    return expirationDate.toLocaleDateString();
+                }
             }
         };
 
