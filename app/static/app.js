@@ -179,6 +179,16 @@ createApp({
             }
         };
 
+        const downloadFile = (token, filename) => {
+            const url = `${window.location.origin}/share/${token}`;
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
         const formatFileSize = (bytes) => {
             if (bytes === 0) return '0 Bytes';
             
@@ -256,6 +266,7 @@ createApp({
             deleteFile,
             copyUrl,
             copyShareUrl,
+            downloadFile,
             formatFileSize,
             formatDate,
             
