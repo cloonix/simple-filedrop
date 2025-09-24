@@ -299,11 +299,18 @@ async def periodic_cleanup():
 
 if __name__ == "__main__":
     asyncio.run(startup())
-    uvicorn.run(
+
+    # Create uvicorn config with large body size support
+    import uvicorn.config
+    config = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=8000,
-        timeout_keep_alive=300,  # 5 minutes
+        timeout_keep_alive=300,
         limit_max_requests=None,
-        limit_concurrency=None
+        limit_concurrency=None,
+        # Set max request body size to match MAX_FILE_SIZE
+        h11_max_incomplete_event_size=MAX_FILE_SIZE + (1024 * 1024)  # Add 1MB buffer
     )
+    server = uvicorn.Server(config)
+    server.run()
