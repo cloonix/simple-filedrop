@@ -13,7 +13,7 @@ createApp({
         const files = ref([]);
         const fileInput = ref(null);
         const isDragging = ref(false);
-        const appConfig = ref({ title: 'Simple Filedrop', subtitle: 'Simple file sharing' });
+        const appConfig = ref({ title: 'Simple Filedrop', subtitle: 'Simple file sharing', max_file_size: 100 * 1024 * 1024 });
 
         const uploadProgress = ref(0);
         const uploadMessage = ref('');
@@ -80,6 +80,13 @@ createApp({
         const upload = async () => {
             if (!selectedFile.value) return;
 
+            // Client-side file size validation using server config
+            const maxFileSize = appConfig.value.max_file_size;
+            if (selectedFile.value.size > maxFileSize) {
+                uploadMessage.value = `File too large. Maximum size: ${Math.round(maxFileSize / (1024*1024))}MB`;
+                return;
+            }
+
             uploading.value = true;
             uploadProgress.value = 0;
             uploadMessage.value = 'Preparing upload...';
@@ -113,7 +120,13 @@ createApp({
                     maxDownloads.value = null;
                     loadFiles();
                 } else {
-                    uploadMessage.value = `Error: ${xhr.statusText || 'Upload failed'}`;
+                    // Try to parse server error message
+                    try {
+                        const errorData = JSON.parse(xhr.responseText);
+                        uploadMessage.value = errorData.detail || 'Upload failed';
+                    } catch {
+                        uploadMessage.value = xhr.statusText || 'Upload failed';
+                    }
                 }
             });
 
@@ -127,7 +140,13 @@ createApp({
                 uploadMessage.value = 'Upload canceled.';
             });
 
+            xhr.addEventListener('timeout', () => {
+                uploading.value = false;
+                uploadMessage.value = 'Upload timed out. Try uploading a smaller file or check your connection.';
+            });
+
             xhr.open('POST', '/api/upload', true);
+            xhr.timeout = 300000; // 5 minutes timeout for large files
             xhr.send(formData);
         };
 

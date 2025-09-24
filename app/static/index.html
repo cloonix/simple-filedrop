@@ -216,9 +216,14 @@
                 </div>
             </div>
         </main>
+
+        <!-- Footer -->
+        <footer class="mt-16 py-6 text-center text-sm text-gray-500">
+            <p>Build {{BUILD_TIMESTAMP}} • Simple Filedrop</p>
+        </footer>
     </div>
 
     <!-- Vue.js Application -->
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{BUILD_TIMESTAMP}}"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 Ultra-Minimal File Sharing App
 All features in one file: OIDC auth, upload/download, expiration, limits
 """
-import os, secrets, sqlite3, asyncio, uvicorn, aiofiles, uuid, logging
+import os, secrets, sqlite3, asyncio, uvicorn, aiofiles, uuid, logging, time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -27,6 +27,7 @@ APP_SUBTITLE = os.getenv("APP_SUBTITLE", "Simple file sharing")
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
 DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", str(100 * 1024 * 1024)))  # 100MB default
+BUILD_TIMESTAMP = int(time.time())  # Build timestamp for cache busting
 
 # Database
 def init_db():
@@ -46,6 +47,31 @@ def cleanup():
 
 # App
 app = FastAPI(title="File Share")
+
+# Configure max request body size to match MAX_FILE_SIZE
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+
+# Configure body size limit for large file uploads
+import uvicorn
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_body_size: int):
+        super().__init__(app)
+        self.max_body_size = max_body_size
+
+    async def dispatch(self, request, call_next):
+        if request.headers.get("content-length"):
+            content_length = int(request.headers.get("content-length", 0))
+            if content_length > self.max_body_size:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Request body too large. Maximum size: {self.max_body_size // (1024*1024)}MB"}
+                )
+        return await call_next(request)
+
+app.add_middleware(MaxBodySizeMiddleware, max_body_size=MAX_FILE_SIZE)
 app.add_middleware(SessionMiddleware, 
     secret_key=SESSION_KEY, 
     same_site="strict")
@@ -92,7 +118,12 @@ async def me(request: Request):
 
 @app.get("/api/config")
 async def config():
-    return {"title": APP_TITLE, "subtitle": APP_SUBTITLE}
+    return {
+        "title": APP_TITLE,
+        "subtitle": APP_SUBTITLE,
+        "max_file_size": MAX_FILE_SIZE,
+        "build_timestamp": BUILD_TIMESTAMP
+    }
 
 
 # API
@@ -246,7 +277,14 @@ async def delete(file_id: int, authenticated: bool = Depends(auth)):
 # Frontend
 @app.get("/")
 async def index():
-    return FileResponse("static/index.html")
+    # Read the HTML template and inject build timestamp
+    with open("static/index.html", "r") as f:
+        html_content = f.read()
+
+    # Replace placeholders with actual values
+    html_content = html_content.replace("{{BUILD_TIMESTAMP}}", str(BUILD_TIMESTAMP))
+
+    return HTMLResponse(content=html_content)
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -261,4 +299,11 @@ async def periodic_cleanup():
 
 if __name__ == "__main__":
     asyncio.run(startup())
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        timeout_keep_alive=300,  # 5 minutes
+        limit_max_requests=None,
+        limit_concurrency=None
+    )
