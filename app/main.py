@@ -143,8 +143,14 @@ async def upload(
     
     # Check file size
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_FILE_SIZE:
-        raise HTTPException(413, f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+    if content_length:
+        content_length_int = int(content_length)
+        logging.info(f"Upload request: file={file.filename}, size={content_length_int} bytes ({content_length_int / (1024*1024):.1f}MB), max_allowed={MAX_FILE_SIZE} bytes ({MAX_FILE_SIZE / (1024*1024):.1f}MB)")
+        if content_length_int > MAX_FILE_SIZE:
+            logging.warning(f"File rejected: size {content_length_int} exceeds limit {MAX_FILE_SIZE}")
+            raise HTTPException(413, f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+    else:
+        logging.info(f"Upload request: file={file.filename}, size=unknown (no content-length header)")
     
     # Additional file size check during upload
     file_size = 0
@@ -298,6 +304,11 @@ async def periodic_cleanup():
     while True: await asyncio.sleep(3600); cleanup()
 
 if __name__ == "__main__":
+    # Log startup configuration for debugging
+    print(f"Starting with MAX_FILE_SIZE: {MAX_FILE_SIZE} bytes ({MAX_FILE_SIZE / (1024*1024):.1f}MB)")
+    print(f"DEV_MODE: {DEV_MODE}")
+    print(f"OIDC_CLIENT_ID configured: {'Yes' if OIDC_ID else 'No'}")
+
     asyncio.run(startup())
 
     # Create uvicorn config with large body size support

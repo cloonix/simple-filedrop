@@ -17,6 +17,7 @@ createApp({
 
         const uploadProgress = ref(0);
         const uploadMessage = ref('');
+        const uploadError = ref('');
         let xhr = null;
 
         // Authentication Functions
@@ -63,6 +64,7 @@ createApp({
             if (file) {
                 selectedFile.value = file;
                 uploadResult.value = null;
+                uploadError.value = '';
             }
         };
 
@@ -74,6 +76,7 @@ createApp({
             if (droppedFiles.length > 0) {
                 selectedFile.value = droppedFiles[0];
                 uploadResult.value = null;
+                uploadError.value = '';
             }
         };
 
@@ -83,7 +86,7 @@ createApp({
             // Client-side file size validation using server config
             const maxFileSize = appConfig.value.max_file_size;
             if (selectedFile.value.size > maxFileSize) {
-                uploadMessage.value = `File too large. Maximum size: ${Math.round(maxFileSize / (1024*1024))}MB`;
+                uploadError.value = `File too large. Maximum size: ${Math.round(maxFileSize / (1024*1024))}MB`;
                 return;
             }
 
@@ -91,6 +94,7 @@ createApp({
             uploadProgress.value = 0;
             uploadMessage.value = 'Preparing upload...';
             uploadResult.value = null;
+            uploadError.value = '';
 
             const formData = new FormData();
             formData.append('file', selectedFile.value);
@@ -123,26 +127,27 @@ createApp({
                     // Try to parse server error message
                     try {
                         const errorData = JSON.parse(xhr.responseText);
-                        uploadMessage.value = errorData.detail || 'Upload failed';
+                        uploadError.value = errorData.detail || 'Upload failed';
                     } catch {
-                        uploadMessage.value = xhr.statusText || 'Upload failed';
+                        uploadError.value = xhr.statusText || 'Upload failed';
                     }
                 }
             });
 
             xhr.addEventListener('error', () => {
                 uploading.value = false;
-                uploadMessage.value = 'An error occurred during the upload.';
+                uploadError.value = 'An error occurred during the upload.';
             });
 
             xhr.addEventListener('abort', () => {
                 uploading.value = false;
                 uploadMessage.value = 'Upload canceled.';
+                uploadError.value = '';
             });
 
             xhr.addEventListener('timeout', () => {
                 uploading.value = false;
-                uploadMessage.value = 'Upload timed out. Try uploading a smaller file or check your connection.';
+                uploadError.value = 'Upload timed out. Try uploading a smaller file or check your connection.';
             });
 
             xhr.open('POST', '/api/upload', true);
@@ -273,6 +278,7 @@ createApp({
             appConfig,
             uploadProgress,
             uploadMessage,
+            uploadError,
             
             // Methods
             login,

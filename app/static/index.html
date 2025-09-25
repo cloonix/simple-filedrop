@@ -129,6 +129,17 @@
                             </div>
                         </div>
 
+                        <!-- Upload Error -->
+                        <div v-if="uploadError" class="mt-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl">
+                            <div class="flex items-start space-x-3">
+                                <i class="fas fa-exclamation-triangle text-red-400 text-xl mt-1"></i>
+                                <div class="flex-1">
+                                    <h4 class="font-medium text-red-400 mb-2">Upload failed</h4>
+                                    <p class="text-red-300">{{ uploadError }}</p>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Upload & Cancel Buttons -->
                         <div class="mt-6 flex items-center space-x-4">
                             <button @click="upload" :disabled="!selectedFile || uploading"
